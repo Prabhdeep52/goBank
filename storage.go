@@ -93,14 +93,10 @@ func (s *PostGresStore) GetAccounts() ([]*Account, error) {
 
 	for rows.Next() {
 		account := new(Account)
-		if err := rows.Scan(
-			&account.ID,
-			&account.FirstName,
-			&account.LastName,
-			&account.Number,
-			&account.Balance,
-			&account.CreatedAt); err != nil {
+		account, err = scanAccounts(rows)
+		if err != nil {
 			return nil, err
+
 		}
 		accounts = append(accounts, account)
 	}
@@ -113,7 +109,15 @@ func (s *PostGresStore) GetAccounts() ([]*Account, error) {
 }
 
 func (s *PostGresStore) GetAccountById(Id int) (*Account, error) {
-	return nil, nil
+	rows, err := s.db.Query("SELECT * FROM accounts WHERE id = $1", Id)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		return scanAccounts(rows)
+
+	}
+	return nil, fmt.Errorf("Account with id %d not found", Id)
 }
 
 func (s *PostGresStore) DeleteAccount(Id int) error {
@@ -121,4 +125,18 @@ func (s *PostGresStore) DeleteAccount(Id int) error {
 }
 func (s *PostGresStore) UpdateAccount(a *Account) error {
 	return nil
+}
+
+func scanAccounts(rows *sql.Rows) (*Account, error) {
+	account := new(Account)
+	if err := rows.Scan(
+		&account.ID,
+		&account.FirstName,
+		&account.LastName,
+		&account.Number,
+		&account.Balance,
+		&account.CreatedAt); err != nil {
+		return account, err
+	}
+	return account, nil
 }
