@@ -18,3 +18,6 @@ func main() {
 	server := newApiServer(":8080", store)
 	server.run()
 }
+
+// new account working
+// have to work on login and token

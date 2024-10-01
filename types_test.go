@@ -8,7 +8,7 @@ import (
 )
 
 func TestNewAccount(t *testing.T) {
-	acc, err := NewAccount("John", "Doe", "password")
+	acc, err := NewAccount(1224, "John", "Doe", "password")
 	assert.Nil(t, err)
 	fmt.Printf("%+v\n", acc)
 }

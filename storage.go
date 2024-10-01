@@ -13,6 +13,7 @@ type Storage interface {
 	UpdateAccount(*Account) error
 	GetAccountById(int) (*Account, error)
 	GetAccounts() ([]*Account, error)
+	GetAccountByNumber(int) (*Account, error)
 }
 
 type PostGresStore struct {
@@ -51,39 +52,39 @@ func (s *PostGresStore) createAccountTable() error {
 		id serial primary key,
 		first_name varchar(50),
 		last_name varchar(50),
-		number serial , 
+		accountnumber integer unique , 
 		balance integer,
-		created_at timestamp default current_timestamp
+		created_at timestamp default current_timestamp,
+		password varchar(100)
 	)`
 	_, err := s.db.Exec(query)
 	return err
 }
 
 func (s *PostGresStore) CreateAccount(ac *Account) error {
+	query := `insert into accounts (first_name, last_name, accountnumber, balance, created_at, password) 
+	values ($1, $2, $3, $4, $5, $6) returning id`
 
-	query := `insert into accounts (first_name, last_name, number, balance, created_at) 
-	values ($1, $2, $3, $4, $5) returning id`
-
-	res, err := s.db.Query(
+	err := s.db.QueryRow(
 		query,
 		ac.FirstName,
 		ac.LastName,
-		ac.Number,
+		ac.AccountNumber,
 		ac.Balance,
-		ac.CreatedAt)
+		ac.CreatedAt,
+		ac.Password).Scan(&ac.ID)
 
 	if err != nil {
 		return err
 	}
 
-	fmt.Print("Account created successfully")
-	fmt.Printf("%+v\n", res)
-
+	fmt.Println("Account created successfully with ID:", ac.ID)
 	return nil
 }
 
-func (s *PostGresStore) GetAccountByNumber(number int) (*Account, error) {
-	rows, err := s.db.Query("SELECT * FROM accounts WHERE number = $1", number)
+func (s *PostGresStore) GetAccountByNumber(accountnumber int) (*Account, error) {
+	fmt.Print("Getting account by number called")
+	rows, err := s.db.Query("SELECT * FROM accounts WHERE accountnumber = $1", accountnumber)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +92,7 @@ func (s *PostGresStore) GetAccountByNumber(number int) (*Account, error) {
 		return scanAccounts(rows)
 
 	}
-	return nil, fmt.Errorf("Account with number %d not found", number)
+	return nil, fmt.Errorf("Account with number %d not found", accountnumber)
 }
 
 func (s *PostGresStore) GetAccounts() ([]*Account, error) {
@@ -149,7 +150,7 @@ func scanAccounts(rows *sql.Rows) (*Account, error) {
 		&account.ID,
 		&account.FirstName,
 		&account.LastName,
-		&account.Number,
+		&account.AccountNumber,
 		&account.Balance,
 		&account.CreatedAt); err != nil {
 		return account, err
