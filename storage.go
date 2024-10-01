@@ -82,6 +82,18 @@ func (s *PostGresStore) CreateAccount(ac *Account) error {
 	return nil
 }
 
+func (s *PostGresStore) GetAccountByNumber(number int) (*Account, error) {
+	rows, err := s.db.Query("SELECT * FROM accounts WHERE number = $1", number)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		return scanAccounts(rows)
+
+	}
+	return nil, fmt.Errorf("Account with number %d not found", number)
+}
+
 func (s *PostGresStore) GetAccounts() ([]*Account, error) {
 	rows, err := s.db.Query("SELECT * FROM accounts")
 	if err != nil {
@@ -121,6 +133,10 @@ func (s *PostGresStore) GetAccountById(Id int) (*Account, error) {
 }
 
 func (s *PostGresStore) DeleteAccount(Id int) error {
+	_, err := s.db.Exec("DELETE FROM accounts WHERE id = $1", Id)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 func (s *PostGresStore) UpdateAccount(a *Account) error {
