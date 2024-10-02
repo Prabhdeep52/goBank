@@ -49,7 +49,7 @@ func writeJson(w http.ResponseWriter, status int, val any) error {
 
 func (s *APIServer) run() {
 	router := mux.NewRouter()
-
+	router.HandleFunc("/deposit", JWTauthMiddleWare(makeHttpHandler(s.handleDoposit), s.store))
 	router.HandleFunc("/login", makeHttpHandler(s.handleLogin))
 	router.HandleFunc("/account", makeHttpHandler(s.handleAccount))
 	router.HandleFunc("/account/{id}", JWTauthMiddleWare(makeHttpHandler(s.handleGetAccountById), s.store))
@@ -62,7 +62,7 @@ func (s *APIServer) run() {
 
 func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == "GET" {
-		return s.handleGetAccounts(w, r)
+		return s.handleGetAccounts(w)
 	}
 	if r.Method == "POST" {
 		return s.handleCreateAccount(w, r)
@@ -75,7 +75,7 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error 
 
 func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != "POST" {
-		return fmt.Errorf("Method not allowed %s", r.Method)
+		return fmt.Errorf("method not allowed %s", r.Method)
 	}
 
 	loginReq := new(LoginRequest)
@@ -84,24 +84,63 @@ func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	}
 	defer r.Body.Close()
 
-	// Validate the login credentials
 	account, err := s.store.GetAccountByNumber(loginReq.AccountNumber)
 	fmt.Print(account)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(account.Password), []byte(loginReq.Password)) != nil {
 		return fmt.Errorf("ss login credentials")
 	}
 
-	// Generate JWT Token
 	token, err := generateJWT(account)
 	if err != nil {
-		return fmt.Errorf("Error generating token: %v", err)
+		return fmt.Errorf("error generating token: %v", err)
 	}
 
-	// Return the token to the user
 	return writeJson(w, http.StatusOK, map[string]string{"token": token})
 }
 
-func (s *APIServer) handleGetAccounts(w http.ResponseWriter, r *http.Request) error {
+func (s *APIServer) handleDoposit(w http.ResponseWriter, r *http.Request) error {
+	// Initialize a new DepositRequest struct
+	depositReq := &DepositRequest{}
+
+	// Decode the request body into depositReq
+	if err := json.NewDecoder(r.Body).Decode(depositReq); err != nil {
+		return fmt.Errorf("invalid deposit request: %v", err)
+	}
+	defer r.Body.Close()
+
+	// Ensure the amount is a positive float
+	if depositReq.Amount <= 0 {
+		return fmt.Errorf("invalid deposit amount")
+	}
+
+	// Extract the account from the context
+	account := r.Context().Value("account").(*Account)
+
+	// Check if the account number matches
+	if account.AccountNumber != depositReq.AccountNumber {
+		return fmt.Errorf("unauthorized: You can only deposit into your own account")
+	}
+
+	// Log the deposit information
+	fmt.Printf("Depositing into account %d, amount is %.2f\n", depositReq.AccountNumber, depositReq.Amount)
+
+	// Update the account balance
+	accountToDeposit, err := s.store.GetAccountByNumber(depositReq.AccountNumber)
+	if err != nil {
+		return fmt.Errorf("account not found: %v", err)
+	}
+
+	// Update balance
+	accountToDeposit.Balance += depositReq.Amount
+	updatedAccount, err := s.store.UpdateAccountBalance(accountToDeposit.AccountNumber, accountToDeposit.Balance)
+	if err != nil {
+		return fmt.Errorf("error updating account balance: %v", err)
+	}
+
+	return writeJson(w, http.StatusOK, updatedAccount)
+}
+
+func (s *APIServer) handleGetAccounts(w http.ResponseWriter) error {
 	accounts, err := s.store.GetAccounts()
 	if err != nil {
 		return err
@@ -110,26 +149,26 @@ func (s *APIServer) handleGetAccounts(w http.ResponseWriter, r *http.Request) er
 }
 
 func (s *APIServer) handleGetAccountById(w http.ResponseWriter, r *http.Request) error {
-	if r.Method == "GET" {
-		idStr := mux.Vars(r)["id"]
-		id, err := strconv.Atoi(idStr)
-		if err != nil {
-			return fmt.Errorf("invalid account id %s", idStr)
-		}
-		account, err := s.store.GetAccountById(id)
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("Getting account of id : %d", id)
-
-		return writeJson(w, http.StatusOK, account)
+	idStr := mux.Vars(r)["id"]
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return fmt.Errorf("invalid account id %s", idStr)
 	}
-	if r.Method == "DELETE" {
-		return s.handleDeleteAccount(w, r)
+
+	// Extract the account from the context
+	account := r.Context().Value("account").(*Account)
+	if account.ID != id {
+		return fmt.Errorf("unauthorized: You are not allowed to access this account")
 	}
-	fmt.Errorf("Method not allowed %s", r.Method)
-	return writeJson(w, http.StatusBadRequest, APIError{Error: "Method not allowed"})
+
+	accountData, err := s.store.GetAccountById(id)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Getting account of id : %d", id)
+
+	return writeJson(w, http.StatusOK, accountData)
 }
 
 func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) error {
@@ -162,7 +201,7 @@ func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 
 	err = s.store.DeleteAccount(id)
 	if err != nil {
-		fmt.Errorf("Error deleting account %d  : %s ", id, err)
+		fmt.Errorf("error deleting account %d  : %s ", id, err)
 	}
 
 	return writeJson(w, http.StatusOK, map[string]int{"Deleted account": id})
@@ -198,14 +237,13 @@ func permissionDenied(w http.ResponseWriter) {
 
 func JWTauthMiddleWare(handlerFunc http.HandlerFunc, s Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("middleware Authenticating request")
+		fmt.Printf("Middleware Authenticating request")
 		tokenString := r.Header.Get("Authorization")
 		if tokenString == "" {
 			permissionDenied(w)
 			return
 		}
 
-		// Remove "Bearer " prefix if present
 		if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
 			tokenString = tokenString[7:]
 		}
@@ -225,7 +263,6 @@ func JWTauthMiddleWare(handlerFunc http.HandlerFunc, s Storage) http.HandlerFunc
 			return
 		}
 
-		// Set account info in the request context if needed
 		ctx := context.WithValue(r.Context(), "account", account)
 		r = r.WithContext(ctx)
 
@@ -238,21 +275,21 @@ func validateJWT(tokenString string) (*jwt.Token, error) {
 
 	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 
 		return []byte(secret), nil
 	})
 }
 
-func getID(r *http.Request) (int, error) {
-	idStr := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		return id, fmt.Errorf("invalid id given %s", idStr)
-	}
-	return id, nil
-}
+// func getID(r *http.Request) (int, error) {
+// 	idStr := mux.Vars(r)["id"]
+// 	id, err := strconv.Atoi(idStr)
+// 	if err != nil {
+// 		return id, fmt.Errorf("invalid id given %s", idStr)
+// 	}
+// 	return id, nil
+// }
 
 //create login
 // add withdraw

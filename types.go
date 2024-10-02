@@ -11,6 +11,11 @@ type LoginRequest struct {
 	Password      string `json:"password"`
 }
 
+type DepositRequest struct {
+	AccountNumber int     `json:"accountnumber"`
+	Amount        float64 `json:"amount"`
+}
+
 type CreateAccountRequest struct {
 	AccountNumber int    `json:"accountnumber"`
 	FirstName     string `json:"firstname"`
@@ -31,6 +36,12 @@ type Account struct {
 	Balance       float64   `json:"balance"`
 	CreatedAt     time.Time `json:"createdAt"`
 	Password      string    `json:"password"`
+}
+
+func DepositReq(amount float64) (*Account, error) {
+	return &Account{
+		Balance: amount,
+	}, nil
 }
 
 func NewAccount(accountnumber int, firstName, LastName, password string) (*Account, error) {

@@ -14,6 +14,7 @@ type Storage interface {
 	GetAccountById(int) (*Account, error)
 	GetAccounts() ([]*Account, error)
 	GetAccountByNumber(int) (*Account, error)
+	UpdateAccountBalance(int, float64) (*Account, error)
 }
 
 type PostGresStore struct {
@@ -92,6 +93,7 @@ func (s *PostGresStore) GetAccountByNumber(accountnumber int) (*Account, error) 
 		return scanAccounts(rows)
 
 	}
+	defer rows.Close()
 	return nil, fmt.Errorf("Account with number %d not found", accountnumber)
 }
 
@@ -130,6 +132,7 @@ func (s *PostGresStore) GetAccountById(Id int) (*Account, error) {
 		return scanAccounts(rows)
 
 	}
+	defer rows.Close()
 	return nil, fmt.Errorf("Account with id %d not found", Id)
 }
 
@@ -141,7 +144,28 @@ func (s *PostGresStore) DeleteAccount(Id int) error {
 	return nil
 }
 func (s *PostGresStore) UpdateAccount(a *Account) error {
+
 	return nil
+}
+
+func (s *PostGresStore) UpdateAccountBalance(accountNumber int, newBalance float64) (*Account, error) {
+	// Perform the update
+	_, err := s.db.Exec("UPDATE accounts SET balance = $1 WHERE accountnumber = $2", newBalance, accountNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch the updated account from the database
+	updatedAccount := &Account{}
+	err = s.db.QueryRow("SELECT id, first_name, last_name, accountnumber, balance, created_at FROM accounts WHERE accountnumber = $1", accountNumber).
+		Scan(&updatedAccount.ID, &updatedAccount.FirstName, &updatedAccount.LastName, &updatedAccount.AccountNumber, &updatedAccount.Balance, &updatedAccount.CreatedAt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Return the updated account
+	return updatedAccount, nil
 }
 
 func scanAccounts(rows *sql.Rows) (*Account, error) {
@@ -152,7 +176,9 @@ func scanAccounts(rows *sql.Rows) (*Account, error) {
 		&account.LastName,
 		&account.AccountNumber,
 		&account.Balance,
-		&account.CreatedAt); err != nil {
+		&account.CreatedAt,
+		&account.Password,
+	); err != nil {
 		return account, err
 	}
 	return account, nil
