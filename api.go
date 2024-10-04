@@ -49,11 +49,12 @@ func writeJson(w http.ResponseWriter, status int, val any) error {
 
 func (s *APIServer) run() {
 	router := mux.NewRouter()
+	router.HandleFunc("/withdraw", JWTauthMiddleWare(makeHttpHandler(s.handleWithdraw), s.store))
 	router.HandleFunc("/deposit", JWTauthMiddleWare(makeHttpHandler(s.handleDoposit), s.store))
+	router.HandleFunc("/transfer", JWTauthMiddleWare(makeHttpHandler(s.handleTransfer), s.store))
 	router.HandleFunc("/login", makeHttpHandler(s.handleLogin))
 	router.HandleFunc("/account", makeHttpHandler(s.handleAccount))
 	router.HandleFunc("/account/{id}", JWTauthMiddleWare(makeHttpHandler(s.handleGetAccountById), s.store))
-	router.HandleFunc("/transfer", JWTauthMiddleWare(makeHttpHandler(s.handleTransfer), s.store))
 
 	log.Printf("API server listening on %s", s.listenAddr)
 	http.ListenAndServe(s.listenAddr, router)
@@ -124,20 +125,60 @@ func (s *APIServer) handleDoposit(w http.ResponseWriter, r *http.Request) error 
 	// Log the deposit information
 	fmt.Printf("Depositing into account %d, amount is %.2f\n", depositReq.AccountNumber, depositReq.Amount)
 
-	// Update the account balance
-	accountToDeposit, err := s.store.GetAccountByNumber(depositReq.AccountNumber)
+	// accountToDeposit, err := s.store.GetAccountByNumber(depositReq.AccountNumber)
+	// if err != nil {
+	// 	return fmt.Errorf("account not found: %v", err)
+	// }
+
+	acc, err := s.store.CreateTransaction(0, depositReq.AccountNumber, "deposit", depositReq.Amount)
+
+	if err != nil {
+		return fmt.Errorf("error creating transaction: %v", err)
+	}
+
+	return writeJson(w, http.StatusOK, acc)
+}
+
+func (s *APIServer) handleWithdraw(w http.ResponseWriter, r *http.Request) error {
+
+	withdrawReq := &WithdrawRequest{}
+	// Decode the request body into depositReq
+	if err := json.NewDecoder(r.Body).Decode(withdrawReq); err != nil {
+		return fmt.Errorf("invalid deposit request: %v", err)
+	}
+	defer r.Body.Close()
+
+	// Ensure the amount is a positive float
+	if withdrawReq.Amount <= 0 {
+		return fmt.Errorf("invalid deposit amount")
+	}
+
+	// Extract the account from the context
+	account := r.Context().Value("account").(*Account)
+
+	// Check if the account number matches
+	if account.AccountNumber != withdrawReq.AccountNumber {
+		return fmt.Errorf("unauthorized: You can only withdraw from your own account")
+	}
+	accountToWithdraw, err := s.store.GetAccountByNumber(withdrawReq.AccountNumber)
 	if err != nil {
 		return fmt.Errorf("account not found: %v", err)
 	}
 
-	// Update balance
-	accountToDeposit.Balance += depositReq.Amount
-	updatedAccount, err := s.store.UpdateAccountBalance(accountToDeposit.AccountNumber, accountToDeposit.Balance)
-	if err != nil {
-		return fmt.Errorf("error updating account balance: %v", err)
+	if withdrawReq.Amount-accountToWithdraw.Balance > 0 {
+		fmt.Println("Insufficient funds")
+		return writeJson(w, http.StatusBadRequest, APIError{Error: "Insufficient funds"})
 	}
 
-	return writeJson(w, http.StatusOK, updatedAccount)
+	fmt.Printf("Withdrawing from account %d, amount is %.2f\n", withdrawReq.AccountNumber, withdrawReq.Amount)
+
+	acc, err := s.store.CreateTransaction(withdrawReq.AccountNumber, 0, "withdraw", withdrawReq.Amount)
+
+	if err != nil {
+		return fmt.Errorf("error doing transaction : %v", err)
+	}
+
+	return writeJson(w, http.StatusOK, acc)
 }
 
 func (s *APIServer) handleGetAccounts(w http.ResponseWriter) error {
@@ -201,7 +242,7 @@ func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 
 	err = s.store.DeleteAccount(id)
 	if err != nil {
-		fmt.Errorf("error deleting account %d  : %s ", id, err)
+		return fmt.Errorf("error deleting account %d  : %s ", id, err)
 	}
 
 	return writeJson(w, http.StatusOK, map[string]int{"Deleted account": id})
@@ -210,11 +251,42 @@ func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
 	TransferReq := new(TransferRequest)
 	if err := json.NewDecoder(r.Body).Decode(TransferReq); err != nil {
-		return err
+		return fmt.Errorf("invalid transfer request: %v", err)
 	}
-	defer r.Body.Close()
 
-	return writeJson(w, http.StatusOK, TransferReq)
+	if TransferReq.Amount <= 0 {
+		return fmt.Errorf("invalid transfer amount")
+	}
+
+	defer r.Body.Close()
+	fromAccount := r.Context().Value("account").(*Account) // already authenticated user
+
+	if fromAccount.AccountNumber != TransferReq.FromAccountNumber {
+		return fmt.Errorf("unauthorized: you can only transfer from your own account")
+	}
+
+	if fromAccount.Balance < TransferReq.Amount {
+		return fmt.Errorf("insufficient funds")
+	}
+
+	toAccount, err := s.store.GetAccountByNumber(TransferReq.ToAccountNumber)
+	if err != nil {
+		return fmt.Errorf("error getting destination account %v", err)
+	}
+
+	fmt.Printf("Transferring from account %d to account %d, amount is %.2f\n", TransferReq.FromAccountNumber, TransferReq.ToAccountNumber, TransferReq.Amount)
+
+	acc, err := s.store.CreateTransaction(TransferReq.FromAccountNumber, TransferReq.ToAccountNumber, "transfer", TransferReq.Amount)
+	if err != nil {
+		return fmt.Errorf("error doing transaction : %v", err)
+	}
+
+	return writeJson(w, http.StatusOK, map[string]interface{}{
+		"message":             "Transfer successful",
+		"from Account number": acc.AccountNumber,
+		"to Account number":   toAccount.AccountNumber,
+		"balance left":        acc.Balance,
+	})
 }
 
 func generateJWT(account *Account) (string, error) {
@@ -263,7 +335,7 @@ func JWTauthMiddleWare(handlerFunc http.HandlerFunc, s Storage) http.HandlerFunc
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "account", account)
+		ctx := context.WithValue(r.Context(), "account", account) //nolint:errcheck
 		r = r.WithContext(ctx)
 
 		handlerFunc(w, r)

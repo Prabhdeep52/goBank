@@ -15,6 +15,7 @@ type Storage interface {
 	GetAccounts() ([]*Account, error)
 	GetAccountByNumber(int) (*Account, error)
 	UpdateAccountBalance(int, float64) (*Account, error)
+	CreateTransaction(int, int, string, float64) (*Account, error)
 }
 
 type PostGresStore struct {
@@ -45,6 +46,10 @@ func (s *PostGresStore) init() error {
 	if err := s.createAccountTable(); err != nil {
 		return err
 	}
+
+	if err := s.createTransactionsTable(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -60,6 +65,26 @@ func (s *PostGresStore) createAccountTable() error {
 	)`
 	_, err := s.db.Exec(query)
 	return err
+}
+
+func (s *PostGresStore) createTransactionsTable() error {
+	query := `CREATE TABLE IF NOT EXISTS transactions (
+    id SERIAL PRIMARY KEY,
+    from_account INTEGER NULL,  -- Allow NULL for deposit
+    to_account INTEGER NULL,    -- Allow NULL for withdraw
+    transactionType VARCHAR(50),
+    amount INTEGER,
+    transactiontime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (from_account) REFERENCES accounts(accountnumber) ON DELETE SET NULL,
+    FOREIGN KEY (to_account) REFERENCES accounts(accountnumber) ON DELETE SET NULL,
+    CHECK (transactionType IN ('deposit', 'withdraw', 'transfer'))
+)`
+	_, err := s.db.Exec(query)
+	return err
+}
+
+func (s *PostGresStore) EnterTransaction() {
+	s.db.Close()
 }
 
 func (s *PostGresStore) CreateAccount(ac *Account) error {
@@ -143,6 +168,7 @@ func (s *PostGresStore) DeleteAccount(Id int) error {
 	}
 	return nil
 }
+
 func (s *PostGresStore) UpdateAccount(a *Account) error {
 
 	return nil
@@ -165,6 +191,78 @@ func (s *PostGresStore) UpdateAccountBalance(accountNumber int, newBalance float
 	}
 
 	// Return the updated account
+	return updatedAccount, nil
+}
+
+func (s *PostGresStore) CreateTransaction(fromAccount, toAccount int, transactionType string, amount float64) (*Account, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var query string
+	switch transactionType {
+	case "transfer":
+		query = `INSERT INTO transactions (from_account, to_account, transactionType, amount) 
+                 VALUES ($1, $2, $3, $4)`
+		_, err = tx.Exec(query, fromAccount, toAccount, transactionType, amount)
+		if err != nil {
+			return nil, err
+		}
+		_, err = tx.Exec(`UPDATE accounts SET balance = balance - $1 WHERE accountnumber = $2`, amount, fromAccount)
+		if err != nil {
+			return nil, err
+		}
+		_, err = tx.Exec(`UPDATE accounts SET balance = balance + $1 WHERE accountnumber = $2`, amount, toAccount)
+		if err != nil {
+			return nil, err
+		}
+
+	case "deposit":
+		fmt.Print("Deposit called with amount: for account ", amount, toAccount)
+		query = `INSERT INTO transactions (from_account, to_account, transactionType, amount) 
+                 VALUES (NULL, $1, $2, $3)` // from_account is NULL for deposits
+		_, err = tx.Exec(query, toAccount, transactionType, amount)
+		if err != nil {
+			return nil, err
+		}
+		_, err = tx.Exec(`UPDATE accounts SET balance = balance + $1 WHERE accountnumber = $2`, amount, toAccount)
+		if err != nil {
+			return nil, err
+		}
+
+	case "withdraw":
+		query = `INSERT INTO transactions (from_account, to_account, transactionType, amount) 
+                 VALUES ($1, NULL, $2, $3)`
+		_, err = tx.Exec(query, fromAccount, transactionType, amount)
+		if err != nil {
+			return nil, err
+		}
+		_, err = tx.Exec(`UPDATE accounts SET balance = balance - $1 WHERE accountnumber = $2`, amount, fromAccount)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return nil, err
+	}
+
+	updatedAccount := &Account{}
+	switch transactionType {
+	case "deposit":
+		err = s.db.QueryRow("SELECT id, first_name, last_name, accountnumber, balance, created_at FROM accounts WHERE accountnumber = $1", toAccount).
+			Scan(&updatedAccount.ID, &updatedAccount.FirstName, &updatedAccount.LastName, &updatedAccount.AccountNumber, &updatedAccount.Balance, &updatedAccount.CreatedAt)
+	case "withdraw", "transfer":
+		err = s.db.QueryRow("SELECT id, first_name, last_name, accountnumber, balance, created_at FROM accounts WHERE accountnumber = $1", fromAccount).
+			Scan(&updatedAccount.ID, &updatedAccount.FirstName, &updatedAccount.LastName, &updatedAccount.AccountNumber, &updatedAccount.Balance, &updatedAccount.CreatedAt)
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	return updatedAccount, nil
 }
 

@@ -16,6 +16,11 @@ type DepositRequest struct {
 	Amount        float64 `json:"amount"`
 }
 
+type WithdrawRequest struct {
+	AccountNumber int     `json:"accountnumber"`
+	Amount        float64 `json:"amount"`
+}
+
 type CreateAccountRequest struct {
 	AccountNumber int    `json:"accountnumber"`
 	FirstName     string `json:"firstname"`
@@ -24,8 +29,9 @@ type CreateAccountRequest struct {
 }
 
 type TransferRequest struct {
-	transerTo int `json:"transferTo"`
-	Amount    int `json:"amount"`
+	FromAccountNumber int     `json:"fromAccountNumber"`
+	ToAccountNumber   int     `json:"toAccountNumber"`
+	Amount            float64 `json:"amount"`
 }
 
 type Account struct {
@@ -36,12 +42,6 @@ type Account struct {
 	Balance       float64   `json:"balance"`
 	CreatedAt     time.Time `json:"createdAt"`
 	Password      string    `json:"password"`
-}
-
-func DepositReq(amount float64) (*Account, error) {
-	return &Account{
-		Balance: amount,
-	}, nil
 }
 
 func NewAccount(accountnumber int, firstName, LastName, password string) (*Account, error) {
