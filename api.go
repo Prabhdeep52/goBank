@@ -15,17 +15,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type APIServer struct {
-	listenAddr string
-	store      Storage
-}
-
-type APIFunc func(w http.ResponseWriter, r *http.Request) error
-
-type APIError struct {
-	Error string `json:"error"`
-}
-
 func newApiServer(listenAddr string, store Storage) *APIServer {
 	return &APIServer{
 		listenAddr: listenAddr,
@@ -55,6 +44,7 @@ func (s *APIServer) run() {
 	router.HandleFunc("/login", makeHttpHandler(s.handleLogin))
 	router.HandleFunc("/account", makeHttpHandler(s.handleAccount))
 	router.HandleFunc("/account/{id}", JWTauthMiddleWare(makeHttpHandler(s.handleGetAccountById), s.store))
+	// router.HandleFunc("/account/{id}/transactions", JWTauthMiddleWare(makeHttpHandler(s.handleGetTransactions), s.store))
 
 	log.Printf("API server listening on %s", s.listenAddr)
 	http.ListenAndServe(s.listenAddr, router)
@@ -289,6 +279,13 @@ func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error
 	})
 }
 
+// func (s *APIServer) handleGetTransactions(w http.ResponseWriter, r *http.Request) error {
+
+// 	account := r.Context().Value("account").(*Account)
+
+// 	return writeJson(w, http.StatusOK, transactions)
+// }
+
 func generateJWT(account *Account) (string, error) {
 
 	claims := &jwt.MapClaims{
@@ -353,16 +350,3 @@ func validateJWT(tokenString string) (*jwt.Token, error) {
 		return []byte(secret), nil
 	})
 }
-
-// func getID(r *http.Request) (int, error) {
-// 	idStr := mux.Vars(r)["id"]
-// 	id, err := strconv.Atoi(idStr)
-// 	if err != nil {
-// 		return id, fmt.Errorf("invalid id given %s", idStr)
-// 	}
-// 	return id, nil
-// }
-
-//create login
-// add withdraw
-// add deposit

@@ -1,10 +1,22 @@
 package main
 
 import (
+	"net/http"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+type APIServer struct {
+	listenAddr string
+	store      Storage
+}
+
+type APIFunc func(w http.ResponseWriter, r *http.Request) error
+
+type APIError struct {
+	Error string `json:"error"`
+}
 
 type LoginRequest struct {
 	AccountNumber int    `json:"accountnumber"`
@@ -32,6 +44,15 @@ type TransferRequest struct {
 	FromAccountNumber int     `json:"fromAccountNumber"`
 	ToAccountNumber   int     `json:"toAccountNumber"`
 	Amount            float64 `json:"amount"`
+}
+
+type Transaction struct {
+	ID              int       `json:"id"`
+	FromAccount     int       `json:"fromAccount"`
+	ToAccount       int       `json:"toAccount"`
+	TransactionType string    `json:"transactionType"`
+	Amount          float64   `json:"amount"`
+	TransactionTime time.Time `json:"transactionTime"`
 }
 
 type Account struct {

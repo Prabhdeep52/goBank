@@ -16,6 +16,7 @@ type Storage interface {
 	GetAccountByNumber(int) (*Account, error)
 	UpdateAccountBalance(int, float64) (*Account, error)
 	CreateTransaction(int, int, string, float64) (*Account, error)
+	// GetTransactionsByAccountNumber(int) ([]Transaction, error)
 }
 
 type PostGresStore struct {
@@ -265,6 +266,26 @@ func (s *PostGresStore) CreateTransaction(fromAccount, toAccount int, transactio
 
 	return updatedAccount, nil
 }
+
+// func (s *PostGresStore) GetTransactionsByAccountNumber(accountNumber int) ([]Transaction, error) {
+// 	rows, err := s.db.Query("SELECT id, from_account, to_account, transactiontype, amount, transactiontime FROM transactions WHERE from_account = $1 OR to_account = $1", accountNumber)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	defer rows.Close()
+
+// 	var transactions []Transaction
+// 	for rows.Next() {
+// 		var tx Transaction
+// 		if err := rows.Scan(&tx.ID, &tx.FromAccount, &tx.ToAccount, &tx.TransactionType, &tx.Amount, &tx.TransactionTime); err != nil {
+// 			return nil, err
+// 		}
+
+// 		transactions = append(transactions, tx)
+// 	}
+
+// 	return transactions, nil
+// }
 
 func scanAccounts(rows *sql.Rows) (*Account, error) {
 	account := new(Account)
