@@ -137,8 +137,8 @@ func (s *PostGresStore) GetAccounts() ([]*Account, error) {
 		account, err = scanAccounts(rows)
 		if err != nil {
 			return nil, err
-
 		}
+
 		accounts = append(accounts, account)
 	}
 
