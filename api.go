@@ -211,7 +211,7 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 
 	account, err := NewAccount(createAccountReq.AccountNumber, createAccountReq.FirstName, createAccountReq.LastName, createAccountReq.Password)
 	if err != nil {
-		fmt.Print("errire1")
+		fmt.Print("error1")
 		return err
 	}
 	if err := s.store.CreateAccount(account); err != nil {
@@ -264,7 +264,7 @@ func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error
 		return fmt.Errorf("error getting destination account %v", err)
 	}
 
-	fmt.Printf("Transferring from account %d to account %d, amount is %.2f\n", TransferReq.FromAccountNumber, TransferReq.ToAccountNumber, TransferReq.Amount)
+	fmt.Printf("Transferring from account %d to account %d and the  amount is %.2f\n", TransferReq.FromAccountNumber, TransferReq.ToAccountNumber, TransferReq.Amount)
 
 	acc, err := s.store.CreateTransaction(TransferReq.FromAccountNumber, TransferReq.ToAccountNumber, "transfer", TransferReq.Amount)
 	if err != nil {
