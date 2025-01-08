@@ -74,6 +74,4 @@ func JWTauthMiddleware(handlerFunc http.HandlerFunc, s Storage) http.HandlerFunc
 func permissionDenied(w http.ResponseWriter) {
 	writeJson(w, http.StatusUnauthorized, APIError{Error: "Permission Denied"})
 }
-
 */
-

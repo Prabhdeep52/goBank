@@ -332,7 +332,7 @@ func JWTauthMiddleWare(handlerFunc http.HandlerFunc, s Storage) http.HandlerFunc
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "account", account) //nolint:errcheck
+		ctx := context.WithValue(r.Context(), "account ", account)
 		r = r.WithContext(ctx)
 
 		handlerFunc(w, r)
